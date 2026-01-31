@@ -1,0 +1,43 @@
+bundle:
+  name: x-intelligence
+
+resources:
+  jobs:
+    sentinel_x_global_monitor:
+      name: X_Global_Monitor
+      
+      schedule:
+        quartz_cron_expression: "0 0/15 * * * ?"
+        timezone_id: "UTC"
+        pause_status: UNPAUSED
+
+      tasks:
+        - task_key: Ingestion
+          notebook_task:
+            notebook_path: ./notebooks/01_ingestion.py
+
+        - task_key: Transformation
+          depends_on:
+            - task_key: Ingestion
+          notebook_task:
+            notebook_path: ./notebooks/02_transformation.py
+
+        - task_key: Data_Quality_Check
+          depends_on:
+            - task_key: Transformation
+          notebook_task:
+            notebook_path: ./notebooks/03_quality_check.py
+
+        - task_key: Analytics
+          depends_on:
+            - task_key: Data_Quality_Check
+          notebook_task:
+            notebook_path: ./notebooks/04_modeling_gold.py
+
+      email_notifications:
+        on_failure:
+          - stefanow37@gmail.com
+
+targets:
+  dev:
+    default: true
