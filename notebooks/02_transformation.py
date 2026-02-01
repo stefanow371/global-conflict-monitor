@@ -1,6 +1,6 @@
 # Databricks notebook source
 # DBTITLE 1,Transform Ingested Data
-from pyspark.sql import SparkSession, DataFrame
+from pyspark.sql import SparkSession
 from pyspark.sql import functions as F
 
 
@@ -17,12 +17,17 @@ class GdeltSilverTransformer:
                 "event_date"
             ),
             F.col("quad_class").cast("int"),
-            F.expr("try_cast(goldstein_scale as double)").alias("raw_goldstein"),
-            F.expr("try_cast(num_mentions as int)").alias("num_mentions"),
+            F.col("goldstein_scale").cast("double").alias("raw_goldstein"),
+            F.col("num_mentions").cast("int").alias("num_mentions"),
             F.col("geo_fullname").cast("string").alias("location"),
-            F.expr("try_cast(lat as double)").alias("lat"),
-            F.expr("try_cast(long as double)").alias("long"),
+            F.col("lat").cast("double").alias("lat"),
+            F.col("long").cast("double").alias("long"),
             F.col("ingested_at"),
+        ).filter(
+            F.col("event_id").isNotNull()
+            & F.col("location").isNotNull()
+            & F.col("lat").isNotNull()
+            & F.col("long").isNotNull()
         )
 
         enriched_df = (
@@ -55,5 +60,7 @@ class GdeltSilverTransformer:
         ).saveAsTable(target_table)
 
 
-transformer = GdeltSilverTransformer(spark)
-transformer.transform("bronze_gdelt_events", "silver_gdelt_refined")
+if __name__ == "__main__":
+    GdeltSilverTransformer(spark).transform(
+        "bronze_gdelt_events", "silver_gdelt_refined"
+    )

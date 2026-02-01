@@ -82,5 +82,4 @@ class GdeltGoldModeler:
 
 
 if __name__ == "__main__":
-    modeler = GdeltGoldModeler(spark)
-    modeler.run()
+    GdeltGoldModeler(spark).run()

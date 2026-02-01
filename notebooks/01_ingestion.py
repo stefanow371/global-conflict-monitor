@@ -4,59 +4,71 @@ import requests
 import zipfile
 import io
 import pandas as pd
-from pyspark.sql import SparkSession
-from pyspark.sql.functions import current_timestamp, lit
+from pyspark.sql.functions import current_timestamp, lit, col
+from pyspark.sql.types import (
+    StructType,
+    StructField,
+    StringType,
+    DoubleType,
+    IntegerType,
+)
 
 
 class GdeltBronzeIngestor:
-    def __init__(self, spark: SparkSession):
+    def __init__(self, spark):
         self.spark = spark
         self.master_list_url = "http://data.gdeltproject.org/gdeltv2/lastupdate.txt"
-        self.column_indices = [0, 1, 26, 27, 30, 31, 34, 39, 40, 52, 53]
-        self.column_names = [
-            "event_id",
-            "date_int",
-            "event_code",
-            "event_base_code",
-            "quad_class",
-            "goldstein_scale",
-            "num_mentions",
-            "geo_type",
-            "geo_fullname",
-            "lat",
-            "long",
-        ]
+        self.config = {
+            "indices": [0, 1, 26, 27, 29, 30, 31, 51, 52, 56, 57],
+            "names": [
+                "event_id",
+                "date_int",
+                "event_code",
+                "event_base_code",
+                "quad_class",
+                "goldstein_scale",
+                "num_mentions",
+                "geo_type",
+                "geo_fullname",
+                "lat",
+                "long",
+            ],
+        }
 
-    def _get_latest_url(self) -> str:
+    def get_latest_url(self):
         response = requests.get(self.master_list_url)
-        response.raise_for_status()
         return response.text.split("\n")[0].split(" ")[2]
 
-    def run(self, target_table: str = "bronze_gdelt_events"):
-        url = self._get_latest_url()
+    def run(self, target_table="bronze_gdelt_events"):
+        url = self.get_latest_url()
         file_name = url.split("/")[-1]
 
-        response = requests.get(url)
-        with zipfile.ZipFile(io.BytesIO(response.content)) as z:
+        resp = requests.get(url)
+        with zipfile.ZipFile(io.BytesIO(resp.content)) as z:
             with z.open(z.namelist()[0]) as f:
                 pdf = pd.read_csv(
                     f,
                     sep="\t",
                     header=None,
-                    usecols=self.column_indices,
-                    names=self.column_names,
+                    usecols=self.config["indices"],
+                    names=self.config["names"],
+                    dtype=str,
                 )
 
-        df = (
+        if pdf["lat"].isnull().all():
+            raise ValueError("Data Load Error: Geographic coordinates missing")
+
+        df_bronze = (
             self.spark.createDataFrame(pdf)
             .withColumn("ingested_at", current_timestamp())
             .withColumn("source_file", lit(file_name))
         )
 
-        df.write.mode("append").format("delta").option(
+        df_bronze.write.format("delta").mode("append").option(
             "mergeSchema", "true"
         ).saveAsTable(target_table)
+        return file_name
 
 
-ingestor = GdeltBronzeIngestor(spark)
-ingestor.run()
+if __name__ == "__main__":
+    GdeltBronzeIngestor(spark).run()
